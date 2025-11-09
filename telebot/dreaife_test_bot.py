@@ -47,7 +47,11 @@ def setup_logging():
 # 设置日志配置
 logger = setup_logging()
 
-TOKEN = '7884891699:AAF77GGDoHUqR0KTyYl5hUd0oc-Y173dtKo'
+# 从环境变量读取 Telegram Bot Token
+TOKEN = os.getenv('TELEGRAM_BOT_DREAIFE_TOKEN')
+if not TOKEN:
+    logger.error("TELEGRAM_BOT_DREAIFE_TOKEN 未设置在环境变量中")
+    raise ValueError("请在 .env 文件中设置 TELEGRAM_BOT_DREAIFE_TOKEN")
 
 # 创建AI管理器实例
 ai_manager = AIManager()
