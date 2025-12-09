@@ -1,0 +1,19 @@
+[Unit]
+Description=Telegram Group Backup (User Account)
+After=network.target
+
+[Service]
+Type=simple
+User=dreaife
+WorkingDirectory=/home/dreaife/bot
+ExecStart=/home/dreaife/bot/venv/bin/python /home/dreaife/bot/telebot/group_backup_bot.py --session-name group_backup
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# 环境变量
+Environment="PATH=/usr/bin:/usr/local/bin"
+
+[Install]
+WantedBy=multi-user.target
