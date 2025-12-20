@@ -68,9 +68,10 @@ groups:
 - **Footer**: Short timestamp for consecutive messages.
 
 ### 4. Automatic Backup Files
-- **Daily Backup**: Backs up messages from the last 24 hours at 4 AM every day.
-  - Naming Format: {group name/group_id}_YYYY-MM-DD.bak
+- **Daily Backup**: Backs up messages from the last 24 hours at 4 AM every day (from Backup Group).
+  - Naming Format: `{BackupGroupTitle}_YYYY-MM-DD_daily.bak`
 - **Weekly Backup**: Uploads to the backup group at 4 AM every Monday.
+  - Naming Format: `{BackupGroupTitle}_YYYY-MM-DD_weekly.bak`
 
 ### 5. System Log
 - **Log File**: `/logs/bot/group_backup/backup.log`

@@ -112,28 +112,21 @@ class GroupBackupClient:
 
         scheduler.start()
 
-    async def _export_messages(self, chat_id, start_time, export_dir):
-        # ... Reuse previous logic ...
-        # For brevity, implementing simplified version or copy-paste
-        # Ideally this should be in a separate utils or backup_logic file
-        # But keeping in Loop for now as requested by user ("separate backup file")
-        # User asked: "按照备份file和message备份区分一下提出来"
-        # So maybe `backup_manager.py`?
-        # Let's keep it in core or new file? 
-        # For now keep here to minimize diff complexity unless strict separation requested.
-        # User said "按照功能模块拆分一下".
-        # Let's put export logic here.
-        
+    async def _export_messages(self, chat_id, start_time, export_dir, suffix=""):
         messages = []
-        async for msg in self.client.iter_messages(chat_id, offset_date=start_time, reverse=True):
-            if not msg.text and not msg.media: continue
-            messages.append({
-                "id": msg.id,
-                "date": msg.date.isoformat(),
-                "sender_id": msg.sender_id,
-                "text": msg.text,
-                "reply_to": msg.reply_to_msg_id
-            })
+        try:
+            async for msg in self.client.iter_messages(chat_id, offset_date=start_time, reverse=True):
+                if not msg.text and not msg.media: continue
+                messages.append({
+                    "id": msg.id,
+                    "date": msg.date.isoformat(),
+                    "sender_id": msg.sender_id,
+                    "text": msg.text,
+                    "reply_to": msg.reply_to_msg_id
+                })
+        except Exception as e:
+            self.logger.error(f"Export fetch failed for {chat_id}: {e}")
+            return None
 
         if not messages: return None
 
@@ -145,7 +138,9 @@ class GroupBackupClient:
             
         safe_title = "".join([c for c in chat_title if c.isalnum() or c in (' ', '-', '_')]).strip()
         date_str = datetime.now().strftime('%Y-%m-%d')
-        filename = f"{safe_title}_{date_str}.bak"
+        # Add suffix to filename to prevent overwrite (e.g. _daily, _weekly)
+        filename = f"{safe_title}_{date_str}{suffix}.bak"
+        
         export_dir.mkdir(parents=True, exist_ok=True)
         file_path = export_dir / filename
         
@@ -155,44 +150,46 @@ class GroupBackupClient:
         return file_path
 
     async def run_daily_backup(self):
-        """每日备份"""
+        """每日备份 (从备份群导出)"""
         try:
             self.logger.info("开始每日备份...")
             schedule = self.config.get('settings', {}).get('backup_schedule', {})
             export_dir = Path(schedule.get('local_export_dir', './data/exports'))
             start_time = datetime.now(pytz.utc) - timedelta(hours=24)
-            for sid in self.source_map:
-                await self._export_messages(sid, start_time, export_dir)
+            
+            # 获取所有唯一的备份群ID
+            unique_targets = set()
+            for targets in self.source_map.values():
+                for target in targets:
+                    unique_targets.add(target['target_id'])
+            
+            for target_id in unique_targets:
+                await self._export_messages(target_id, start_time, export_dir, suffix="_daily")
         except Exception as e:
             self.logger.error(f"每日备份异常: {e}")
 
     async def run_weekly_backup(self):
-        """每周备份"""
+        """每周备份 (从备份群导出并上传)"""
         try:
             self.logger.info("开始每周备份...")
             export_dir = Path("./data/temp_weekly")
             start_time = datetime.now(pytz.utc) - timedelta(days=7)
             
-            for sid, targets in self.source_map.items():
-                if not targets: continue
-                
-                # Get tag from the config (stored in target entries)
-                backup_tag = targets[0].get('tag')
-                
-                path = await self._export_messages(sid, start_time, export_dir)
+            # 获取所有唯一的备份群ID
+            unique_targets = set()
+            for targets in self.source_map.values():
+                for target in targets:
+                    unique_targets.add(target['target_id'])
+            
+            for target_id in unique_targets:
+                path = await self._export_messages(target_id, start_time, export_dir, suffix="_weekly")
                 if path:
-                    # Upload to ALL mapped targets
-                    for target in targets:
-                        try:
-                            target_id = target['target_id']
-                            await self.client.send_file(
-                                target_id, 
-                                path, 
-                                caption=f"#备份 #{backup_tag or sid} (Weekly)"
-                            )
-                        except Exception as e:
-                            self.logger.error(f"Failed to upload weekly backup to {target_id}: {e}")
-                    
+                    caption = f"#备份 (Weekly) {datetime.now().strftime('%Y-%m-%d')}"
+                    try:
+                        await self.client.send_file(target_id, path, caption=caption)
+                    except Exception as e:
+                        self.logger.error(f"Failed to upload to {target_id}: {e}")
+                        
                     if os.path.exists(path):
                         os.remove(path)
         except Exception as e:

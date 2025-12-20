@@ -69,9 +69,10 @@ groups:
 - **分隔线**: 文本消息之间有分隔线，媒体消息无。
 
 ### 4. 自动备份文件
-- **每日备份**: 每天凌晨4点备份过去24h信息为文件
-  - 命名格式： {group名/group_id}_YYYY-MM-DD.bak
+- **每日备份**: 每天凌晨4点备份过去24h信息为文件 (针对备份群)
+  - 命名格式： `{BackupGroupTitle}_YYYY-MM-DD_daily.bak`
 - **每周备份**: 每周一凌晨4点上传到备份群
+  - 命名格式： `{BackupGroupTitle}_YYYY-MM-DD_weekly.bak`
 
 ### 5. 系统日志
 - **日志文件**: `/logs/bot/group_backup/backup.log`
