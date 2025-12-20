@@ -13,26 +13,26 @@ settings:
     weekly_day: "mon" # Day of week for weekly backup
     weekly_time: "04:00" # HH:MM (Local time)
 
-# Target Group ID -> Source Group ID -> Settings
+# Source Group ID -> Settings & Targets
 # Format:
 # groups:
-#   TARGET_CHAT_ID:
-#     SOURCE_CHAT_ID:
-#       name: "Source Group Name"  # Optional: Display name for source
-#       tag: "#tag"               # Optional: Hashtag for source
+#   SOURCE_CHAT_ID:
+#     targets: [BACKUP_CHAT_ID_1, BACKUP_CHAT_ID_2]
+#     name: "Source Name"      # Optional: Display name
+#     tag: "#tag"             # Optional: Hashtag
+
 groups:
   # Example 1: One-to-One
-  # Backup messages from Source A (-100123456789) to Target A (-100987654321)
-  -100987654321:
-    -100123456789:
-      name: "Source A"
+  # Backup from Source A (-100123...) to Target A (-100987...)
+  -100123456789:
+    targets: [-100987654321]
+    name: "Source A"
 
-  # Example 2: Many-to-One
-  # Backup messages from Source B and Source C to Target B
-  -100999888777:
-    -100111222333:
-      name: "Source B"
-      tag: "#srcB"
-    -100444555666:
-      name: "Source C"
-      tag: "#srcC"
+  # Example 2: One-to-Many
+  # Backup from Source B to Target B AND Target C
+  -100444555666:
+    targets: 
+      - -100999888777
+      - -100888777666
+    name: "Source B"
+    tag: "#srcB"

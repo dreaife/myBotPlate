@@ -31,27 +31,25 @@ settings:
     weekly_time: "04:00"             # 凌晨4点上传到备份群
 ```
 
-#### 3. 群组映射 (N对N)
-支持多种映射方式：
+#### 3. 群组映射 (源 -> 目标)
+支持将一个源群的消息转发到多个备份群。
 
-**一对一**:
+**格式**:
 ```yaml
 groups:
-  TARGET_ID_A:
-    SOURCE_ID_A:
-      name: "Source A"
+  SOURCE_ID:
+    targets: [TARGET_ID_1, TARGET_ID_2]
+    name: "源群名称" # 可选
+    tag: "#标签"    # 可选
 ```
 
-**多对一 (聚合)**:
+**示例**:
 ```yaml
 groups:
-  TARGET_ID_COMMON:
-    SOURCE_ID_B:
-      name: "Source B"
-      tag: "#SrcB"
-    SOURCE_ID_C:
-      name: "Source C"
-      tag: "#SrcC"
+  -100123456:
+    targets: 
+      - -100987654
+    name: "我的群组"
 ```
 
 ## 🛠 功能介绍

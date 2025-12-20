@@ -31,27 +31,25 @@ settings:
     weekly_time: "04:00"             # At 4 AM
 ```
 
-#### 3. Group Mapping (N to N)
-Supports various mapping strategies:
+#### 3. Group Mapping (Source-to-Targets)
+Support forwarding one source group to multiple backup groups.
 
-**One-to-One**:
+**Format**:
 ```yaml
 groups:
-  TARGET_ID_A:
-    SOURCE_ID_A:
-      name: "Source A"
+  SOURCE_ID:
+    targets: [TARGET_ID_1, TARGET_ID_2]
+    name: "Source Name" # Optional
+    tag: "#Tag"         # Optional
 ```
 
-**Many-to-One (Aggregation)**:
+**Example**:
 ```yaml
 groups:
-  TARGET_ID_COMMON:
-    SOURCE_ID_B:
-      name: "Source B"
-      tag: "#SrcB"
-    SOURCE_ID_C:
-      name: "Source C"
-      tag: "#SrcC"
+  -100123456:
+    targets: 
+      - -100987654
+    name: "My Group"
 ```
 
 ## 🛠 Features

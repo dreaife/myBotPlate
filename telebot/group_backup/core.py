@@ -34,31 +34,49 @@ class GroupBackupClient:
         self.handler = MessageHandler(None, config, self.mapper, self.chat_states) # Client not set yet
 
     def _parse_config(self):
-        """解析配置构建快速查找表"""
+        """解析配置构建快速查找表 (Source-Centric Config)"""
         groups = self.config.get('groups', {})
-        for target_id, sources in groups.items():
+        # groups structure:
+        # SOURCE_ID:
+        #   targets: [TARGET_ID_1, TARGET_ID_2]
+        #   name: "..."
+        #   tag: "..."
+        
+        for source_id, source_info in groups.items():
             try:
-                target_id = int(target_id)
+                source_id = int(source_id)
             except ValueError:
-                self.logger.error(f"Invalid target ID: {target_id}")
+                self.logger.error(f"Invalid source ID: {source_id}")
                 continue
                 
-            for source_id, source_info in sources.items():
-                try:
-                    source_id = int(source_id)
-                except ValueError:
-                    self.logger.error(f"Invalid source ID: {source_id}")
+            if source_id not in self.source_map:
+                self.source_map[source_id] = []
+            
+            info = source_info or {}
+            
+            # 兼容旧格式或直接读取 targets
+            # 如果 info 包含 targets 列表
+            targets = info.get('targets', [])
+            if not isinstance(targets, list):
+                # 可能是旧格式? 或者是单个ID?
+                # 假设用户可能写 targets: 123 (int)
+                if isinstance(targets, (int, str)):
+                    targets = [targets]
+                else:
+                    self.logger.warning(f"Source {source_id} has invalid targets format: {targets}")
                     continue
-                    
-                if source_id not in self.source_map:
-                    self.source_map[source_id] = []
-                
-                info = source_info or {}
-                self.source_map[source_id].append({
-                    'target_id': target_id,
-                    'name': info.get('name'),
-                    'tag': info.get('tag')
-                })
+            
+            for tid in targets:
+                try:
+                    target_id = int(tid)
+                    entry = {
+                        'target_id': target_id,
+                        'name': info.get('name'),
+                        'tag': info.get('tag')
+                    }
+                    self.source_map[source_id].append(entry)
+                except ValueError:
+                    self.logger.error(f"Invalid target ID {tid} for source {source_id}")
 
     def start_scheduler(self):
         """启动定时任务"""
@@ -154,12 +172,29 @@ class GroupBackupClient:
             self.logger.info("开始每周备份...")
             export_dir = Path("./data/temp_weekly")
             start_time = datetime.now(pytz.utc) - timedelta(days=7)
+            
             for sid, targets in self.source_map.items():
+                if not targets: continue
+                
+                # Get tag from the config (stored in target entries)
+                backup_tag = targets[0].get('tag')
+                
                 path = await self._export_messages(sid, start_time, export_dir)
-                if path and targets:
-                    target_id = targets[0]['target_id']
-                    await self.client.send_file(target_id, path, caption=f"#备份 #{sid} (Weekly)")
-                    os.remove(path)
+                if path:
+                    # Upload to ALL mapped targets
+                    for target in targets:
+                        try:
+                            target_id = target['target_id']
+                            await self.client.send_file(
+                                target_id, 
+                                path, 
+                                caption=f"#备份 #{backup_tag or sid} (Weekly)"
+                            )
+                        except Exception as e:
+                            self.logger.error(f"Failed to upload weekly backup to {target_id}: {e}")
+                    
+                    if os.path.exists(path):
+                        os.remove(path)
         except Exception as e:
             self.logger.error(f"每周备份异常: {e}")
 
