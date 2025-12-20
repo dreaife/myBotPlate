@@ -3,7 +3,8 @@ telegram:
   api_hash: "your_api_hash_here"
 
 settings:
-  auto_delete_ignore_days: 30 # Ignore deletions for messages older than X days
+  auto_delete_ignore_days: 7
+  mapping_retention_days: 30 # Delete mapping records older than X days
   timezone: "Asia/Tokyo"
   
   backup_schedule:

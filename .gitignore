@@ -13,3 +13,8 @@ data/
 # 日志文件
 logs/*.log
 logs/
+
+# 临时文件
+*.bak
+*.tmp
+**/__pycache__
