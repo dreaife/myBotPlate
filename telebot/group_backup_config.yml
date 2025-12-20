@@ -1,8 +1,0 @@
-settings:
-  auto_delete_ignore_days: 30
-
-groups:
-  # Replace with actual IDs
-  # -100TARGET_ID:
-  #   -100SOURCE_ID:
-  #     name: "My Source Group"

@@ -1,6 +1,9 @@
 # .env 文件
 .env
 
+# 配置文件
+telebot/group_backup_config.yml
+
 # 环境
 venv/
 
