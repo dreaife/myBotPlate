@@ -1,0 +1,26 @@
+settings:
+  auto_delete_ignore_days: 30 # Ignore deletions for messages older than X days
+
+# Target Group ID -> Source Group ID -> Settings
+# Format:
+# groups:
+#   TARGET_CHAT_ID:
+#     SOURCE_CHAT_ID:
+#       name: "Source Group Name"  # Optional: Display name for source
+#       tag: "#tag"               # Optional: Hashtag for source
+groups:
+  # Example 1: One-to-One
+  # Backup messages from Source A (-100123456789) to Target A (-100987654321)
+  -100987654321:
+    -100123456789:
+      name: "Source A"
+
+  # Example 2: Many-to-One
+  # Backup messages from Source B and Source C to Target B
+  -100999888777:
+    -100111222333:
+      name: "Source B"
+      tag: "#srcB"
+    -100444555666:
+      name: "Source C"
+      tag: "#srcC"
