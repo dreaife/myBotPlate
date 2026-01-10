@@ -67,7 +67,8 @@ class MessageHandler:
         header = ""
         if should_send_header:
             sender_username = f"@{sender.username}" if hasattr(sender, 'username') and sender.username else ""
-            header = f"👤 {sender_name} {sender_username}"
+            avatar_icon = self._build_avatar_icon(sender_name)
+            header = f"{avatar_icon} {sender_name} {sender_username}"
             
             if target_info.get('name'):
                 header += f"\n📢 {target_info['name']}"
@@ -88,7 +89,7 @@ class MessageHandler:
         msg_content = header
         if message.text:
             msg_content += message.text
-        
+
         # Footer (时间戳) - 仅当不是Header模式显示时间时
         if not should_send_header and not is_rich_media:
              msg_content += f"\n\n`{time_str_full}`"
@@ -114,12 +115,27 @@ class MessageHandler:
 
     async def _send_media(self, target_id, message, msg_content, should_send_header, time_str, reply_to):
         """发送媒体消息"""
+        is_media_only = bool(message.media and not message.text)
         # 对于媒体消息，如果没有文本，header作为caption
         # 如果有文本，header拼接到文本前
         caption = msg_content if message.text else (msg_content if should_send_header else "")
         # 媒体消息如果不带header且无文本，加时间戳caption
         if not caption and not should_send_header: 
                 caption = f"`{time_str}`"
+        if is_media_only and should_send_header:
+            backup_msg = await self.client.send_file(
+                target_id,
+                message.media,
+                reply_to=reply_to
+            )
+            if msg_content:
+                await self.client.send_message(
+                    target_id,
+                    msg_content,
+                    link_preview=False,
+                    reply_to=backup_msg.id
+                )
+            return backup_msg
 
         return await self.client.send_file(
             target_id,
@@ -136,6 +152,12 @@ class MessageHandler:
             link_preview=False,
             reply_to=reply_to
         )
+
+    def _build_avatar_icon(self, sender_name):
+        """使用文本图标模拟头像显示。"""
+        if sender_name:
+            return f"🧑[{sender_name[0]}]"
+        return "🧑"
 
     def _find_reply_to(self, chat_id, reply_to_msg_id, target_id):
         """查找回复目标ID"""
@@ -167,14 +189,9 @@ class MessageHandler:
                     target_id = backup['backup_chat_id']
                     backup_msg_id = backup['backup_msg_id']
                     
-                    # 简单处理: 在原消息后追加 (已修改) 
-                    # 复杂处理需要重建text，但这很难因为不知道原始Header格式
-                    # 这里保持原有逻辑: 追加TAG
-                    # Get current message logic is complex. 
-                    # Simply appending tag is safer.
-                    
-                    # NOTE: current logic in bot was complex edit. 
-                    # Let's try to append tag if not present.
+                    # 在原消息后追加编辑记录：分隔线、修改时间与修改后的内容。
+                    # 复杂处理需要重建 text，但这很难因为不知道原始 Header 格式，
+                    # 所以仅追加编辑内容以保留原始消息。
                     current_backup = await self.client.get_messages(target_id, ids=backup_msg_id)
                     if current_backup and current_backup.text:
                         timezone_str = self.config.get('settings', {}).get('timezone', 'Asia/Tokyo')
@@ -188,12 +205,12 @@ class MessageHandler:
                         edited_text = msg.text or ""
                         edit_entry = (
                             "----\n"
-                            f"{edit_time_str} ({timezone_str})\n"
+                            f"🕐 修改时间: {edit_time_str} ({timezone_str})\n"
                             f"{edited_text}"
                         )
                         if edit_entry in current_backup.text:
                             continue
-                        new_text = f"{current_backup.text}\n{edit_entry}"
+                        new_text = f"{current_backup.text}\n\n{edit_entry}"
                         await self.client.edit_message(target_id, backup_msg_id, new_text)
                             
                 except Exception as e:
