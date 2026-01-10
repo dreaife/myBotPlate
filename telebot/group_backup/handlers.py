@@ -81,8 +81,8 @@ class MessageHandler:
             
             header += separator
         elif not is_rich_media:
-             # 非第一条且非媒体 -> 加分隔线
-             header = separator
+             # 非第一条且非媒体 -> 不加分隔线
+             header = ""
 
         # 构建内容 (Header + Text + Footer)
         msg_content = header
@@ -177,9 +177,24 @@ class MessageHandler:
                     # Let's try to append tag if not present.
                     current_backup = await self.client.get_messages(target_id, ids=backup_msg_id)
                     if current_backup and current_backup.text:
-                        if "#已修改" not in current_backup.text:
-                            new_text = current_backup.text + "\n\n#已修改"
-                            await self.client.edit_message(target_id, backup_msg_id, new_text)
+                        timezone_str = self.config.get('settings', {}).get('timezone', 'Asia/Tokyo')
+                        try:
+                            tz = pytz.timezone(timezone_str)
+                        except Exception:
+                            tz = pytz.utc
+
+                        edit_time = msg.edit_date.astimezone(tz) if msg.edit_date else datetime.now(tz)
+                        edit_time_str = edit_time.strftime('%Y-%m-%d %H:%M:%S')
+                        edited_text = msg.text or ""
+                        edit_entry = (
+                            "----\n"
+                            f"{edit_time_str} ({timezone_str})\n"
+                            f"{edited_text}"
+                        )
+                        if edit_entry in current_backup.text:
+                            continue
+                        new_text = f"{current_backup.text}\n{edit_entry}"
+                        await self.client.edit_message(target_id, backup_msg_id, new_text)
                             
                 except Exception as e:
                     self.logger.error(f"编辑消息失败 {backup}: {e}")
