@@ -81,8 +81,8 @@ class MessageHandler:
             
             header += separator
         elif not is_rich_media:
-             # 非第一条且非媒体 -> 加分隔线
-             header = separator
+             # 非第一条且非媒体 -> 不加分隔线
+             header = ""
 
         # 构建内容 (Header + Text + Footer)
         msg_content = header
