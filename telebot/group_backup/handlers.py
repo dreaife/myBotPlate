@@ -67,7 +67,8 @@ class MessageHandler:
         header = ""
         if should_send_header:
             sender_username = f"@{sender.username}" if hasattr(sender, 'username') and sender.username else ""
-            header = f"👤 {sender_name} {sender_username}"
+            avatar_icon = self._build_avatar_icon(sender_name)
+            header = f"{avatar_icon} {sender_name} {sender_username}"
             
             if target_info.get('name'):
                 header += f"\n📢 {target_info['name']}"
@@ -90,14 +91,8 @@ class MessageHandler:
             msg_content += message.text
 
         # Footer (时间戳) - 仅当不是Header模式显示时间时
-        footer_text = ""
         if not should_send_header and not is_rich_media:
-             footer_text = f"\n\n`{time_str_full}`"
-             msg_content += footer_text
-
-        body_text = message.text or ""
-        if footer_text:
-            body_text = f"{body_text}{footer_text}" if body_text else footer_text
+             msg_content += f"\n\n`{time_str_full}`"
 
         # 查找回复
         reply_to = self._find_reply_to(message.chat_id, message.reply_to_msg_id, target_id)
@@ -107,13 +102,7 @@ class MessageHandler:
         if message.media:
             backup_msg = await self._send_media(target_id, message, msg_content, should_send_header, time_str_full, reply_to)
         else:
-            backup_msg = await self._send_text_with_header_avatar(
-                target_id,
-                sender,
-                header,
-                body_text,
-                reply_to
-            )
+            backup_msg = await self._send_text(target_id, msg_content, reply_to)
             
         # 记录映射
         if backup_msg:
@@ -164,33 +153,11 @@ class MessageHandler:
             reply_to=reply_to
         )
 
-    async def _send_text_with_header_avatar(self, target_id, sender, header, text, reply_to):
-        """发送文本消息，并在需要时用头像承载 header."""
-        if not header:
-            return await self._send_text(target_id, text, reply_to)
-
-        avatar_msg = None
-        try:
-            photos = await self.client.get_profile_photos(sender, limit=1)
-            if photos:
-                avatar_msg = await self.client.send_file(
-                    target_id,
-                    photos[0],
-                    caption=header,
-                    reply_to=reply_to
-                )
-        except Exception as e:
-            self.logger.warning(f"获取头像失败: {e}")
-
-        if not avatar_msg:
-            combined = f"{header}{text}" if text else header
-            return await self._send_text(target_id, combined, reply_to)
-
-        body_reply_to = avatar_msg.id if avatar_msg else reply_to
-        if text:
-            return await self._send_text(target_id, text, body_reply_to)
-
-        return avatar_msg
+    def _build_avatar_icon(self, sender_name):
+        """使用文本图标模拟头像显示。"""
+        if sender_name:
+            return f"🧑[{sender_name[0]}]"
+        return "🧑"
 
     def _find_reply_to(self, chat_id, reply_to_msg_id, target_id):
         """查找回复目标ID"""
