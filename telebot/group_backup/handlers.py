@@ -141,6 +141,13 @@ class MessageHandler:
 
     async def _send_media(self, target_id, message, msg_content, should_send_header, time_str, reply_to):
         """发送媒体消息"""
+        if isinstance(message.media, MessageMediaWebPage):
+            return await self.client.send_message(
+                target_id,
+                msg_content or "",
+                link_preview=True,
+                reply_to=reply_to
+            )
         is_media_only = bool(message.media and not message.text)
         # 对于媒体消息，如果没有文本，header作为caption
         # 如果有文本，header拼接到文本前
