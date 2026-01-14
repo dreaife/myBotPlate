@@ -1,7 +1,8 @@
 import logging
 import pytz
+import asyncio
 from datetime import datetime
-from telethon.tl.types import MessageService, MessageMediaWebPage
+from telethon.tl.types import MessageService, MessageMediaWebPage, Message
 
 class MessageHandler:
     """处理消息逻辑"""
@@ -12,6 +13,36 @@ class MessageHandler:
         self.mapper = mapper
         self.chat_states = chat_states
         self.logger = logging.getLogger(__name__)
+        self._queues = {}
+        self._workers = {}
+
+    async def _get_queue(self, target_id):
+        if target_id not in self._queues:
+            self._queues[target_id] = asyncio.Queue()
+            self._workers[target_id] = asyncio.create_task(self._worker_loop(target_id))
+        return self._queues[target_id]
+
+    async def _worker_loop(self, target_id):
+        queue = await self._get_queue(target_id)
+        while True:
+            try:
+                task_type, args = await queue.get()
+                try:
+                    if task_type == 'new':
+                        await self._process_single_target(*args)
+                    elif task_type == 'edit':
+                        await self._process_edit_target(*args)
+                    elif task_type == 'delete':
+                        await self._process_delete_target(*args)
+                except Exception as e:
+                    self.logger.error(f"Worker {target_id} error processing {task_type}: {e}", exc_info=True)
+                finally:
+                    queue.task_done()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self.logger.error(f"Worker {target_id} critical error: {e}", exc_info=True)
+                await asyncio.sleep(1)
 
     def _get_topic_id(self, message):
         """Get the topic ID of the message if applicable"""
@@ -33,8 +64,7 @@ class MessageHandler:
                 return
             
             chat_id = message.chat_id
-            sender = await message.get_sender()
-            sender_id = sender.id if sender else 0
+            # sender fetching moved to worker to speed up dispatch
             
             # Get message topic ID (if any)
             msg_topic_id = self._get_topic_id(message)
@@ -48,24 +78,39 @@ class MessageHandler:
                         continue
                         
                 target_id = target_info['target_id']
-                await self._process_single_target(message, sender, target_id, target_info)
+                target_topic_id = target_info.get('target_topic_id')
+                queue_key = (target_id, target_topic_id)
+                self.logger.info(f"Queuing msg {message.id} from {chat_id} to {queue_key}")
+                queue = await self._get_queue(queue_key)
+                await queue.put(('new', (message, target_id, target_info)))
                 
         except Exception as e:
             self.logger.error(f"处理新消息失败: {e}", exc_info=True)
 
-    async def _process_single_target(self, message, sender, target_id, target_info):
+    async def _process_single_target(self, message, target_id, target_info):
         """处理单个目标的转发逻辑"""
+        try:
+            sender = await message.get_sender()
+        except Exception as e:
+            self.logger.warning(f"Failed to get sender for {message.id}: {e}")
+            sender = None
+            
         sender_id = sender.id if sender else 0
+
         sender_name = getattr(sender, 'first_name', 'Unknown')
         if hasattr(sender, 'last_name') and sender.last_name:
             sender_name += f" {sender.last_name}"
             
         # 检查是否需要发送头部
-        state = self.chat_states.get(target_id, {'last_sender_id': 0})
+        target_topic_id = target_info.get('target_topic_id')
+        state_key = (target_id, target_topic_id) if target_topic_id else target_id
+
+        # 检查是否需要发送头部
+        state = self.chat_states.get(state_key, {'last_sender_id': 0})
         should_send_header = state['last_sender_id'] != sender_id
         
         # 更新状态
-        self.chat_states[target_id] = {'last_sender_id': sender_id}
+        self.chat_states[state_key] = {'last_sender_id': sender_id}
         
         # 获取配置时区
         timezone_str = self.config.get('settings', {}).get('timezone', 'Asia/Tokyo')
@@ -132,11 +177,13 @@ class MessageHandler:
             
         # 记录映射
         if backup_msg:
+             target_topic_id = target_info.get('target_topic_id')
              self.mapper.add_mapping(
                 message.chat_id, 
                 message.id,
                 target_id, 
-                backup_msg.id
+                backup_msg.id,
+                target_topic_id
             )
 
     async def _send_media(self, target_id, message, msg_content, should_send_header, time_str, reply_to):
@@ -206,25 +253,45 @@ class MessageHandler:
                 return bm.get('backup_msg_id')
         return None
 
-    async def handle_edit_message(self, event):
+    async def handle_edit_message(self, event, target_info_list):
         """处理消息编辑"""
         try:
             msg = event.message
             chat_id = msg.chat_id
             msg_id = msg.id
             
+            # Use Mapping to determine where to send edits
             backups = self.mapper.get_backup_msgs(chat_id, msg_id)
             if not backups:
                 return
-                
+
+            # Deduplicate by queue to avoid sending same edit multiple times to same queue?
+            # Actually each backup entry corresponds to a specific message on a specific target.
+            # We should dispatch individual tasks for each backup entry.
+            
             for backup in backups:
-                try:
-                    target_id = backup['backup_chat_id']
-                    backup_msg_id = backup['backup_msg_id']
-                    
-                    # 在原消息后追加编辑记录：分隔线、修改时间与修改后的内容。
-                    # 复杂处理需要重建 text，但这很难因为不知道原始 Header 格式，
-                    # 所以仅追加编辑内容以保留原始消息。
+                target_id = backup['backup_chat_id']
+                topic_id = backup.get('target_topic_id')
+                queue_key = (target_id, topic_id)
+                
+                queue = await self._get_queue(queue_key)
+                await queue.put(('edit', (msg, target_id, backup))) # Pass backup entry instead of target_info
+
+        except Exception as e:
+            self.logger.error(f"Error dispatching edit: {e}", exc_info=True)
+
+    async def _process_edit_target(self, msg, target_id, backup_entry):
+            # Worker now receives specific backup entry
+            # No need to iterate all backups again or check IDs
+            
+            # Verify target_id matches (should match as dispatched by key)
+            if str(backup_entry['backup_chat_id']) != str(target_id):
+                return
+
+            backup_msg_id = backup_entry['backup_msg_id']
+            # ... process edit ...
+            try:
+                    # 在原消息后追加编辑记录
                     current_backup = await self.client.get_messages(target_id, ids=backup_msg_id)
                     if current_backup:
                         timezone_str = self.config.get('settings', {}).get('timezone', 'Asia/Tokyo')
@@ -242,18 +309,18 @@ class MessageHandler:
                             f"{edited_text}"
                         )
                         current_text = current_backup.text or ""
+                        
+                        # Avoid duplicate edits check
                         if edit_entry in current_text:
-                            continue
+                            return 
+
                         new_text = f"{current_text}\n\n{edit_entry}" if current_text else edit_entry
                         await self.client.edit_message(target_id, backup_msg_id, new_text)
                             
-                except Exception as e:
-                    self.logger.error(f"编辑消息失败 {backup}: {e}")
-                    
-        except Exception as e:
-            self.logger.error(f"处理编辑消息失败: {e}")
+            except Exception as e:
+                    self.logger.error(f"编辑消息失败 {backup_entry}: {e}")
 
-    async def handle_deleted_message(self, event):
+    async def handle_deleted_message(self, event, target_info_list):
         """处理消息撤回"""
         try:
             msg_ids = event.deleted_ids
@@ -262,41 +329,63 @@ class MessageHandler:
             if not msg_ids or not chat_id:
                 return
                 
-            recall_time = datetime.now().strftime('%H:%M:%S')
-            
             for msg_id in msg_ids:
                 backups = self.mapper.get_backup_msgs(chat_id, msg_id)
                 for backup in backups:
-                    if self._is_auto_delete_ignored(backup.get('timestamp')):
-                         continue
-
                     target_id = backup['backup_chat_id']
-                    backup_msg_id = backup['backup_msg_id']
+                    topic_id = backup.get('target_topic_id')
+                    queue_key = (target_id, topic_id)
                     
+                    queue = await self._get_queue(queue_key)
+                    # Pass list of ONE backup entry to keep processing logic simple or adapt?
+                    # Original logic processed list of msg_ids.
+                    # Adapting to process single backup entry is cleaner.
+                    await queue.put(('delete', ([msg_id], chat_id, target_id, backup))) 
+
+        except Exception as e:
+            self.logger.error(f"Error dispatching delete: {e}", exc_info=True)
+
+    async def _process_delete_target(self, msg_ids, chat_id, target_id, backup_entry=None):
+            recall_time = datetime.now().strftime('%H:%M:%S')
+            
+            # If backup_entry provided, use it directly (optimized path)
+            if backup_entry:
+                try:
+                    target_id = backup_entry['backup_chat_id']
+                    backup_msg_id = backup_entry['backup_msg_id']
+                    
+                    if self._is_auto_delete_ignored(backup_entry.get('timestamp')):
+                            return
+
+                    # 尝试编辑
                     try:
-                        # 尝试编辑
-                        # NOTE: Simplified logic for brevity in refactor
                         old_msg = await self.client.get_messages(target_id, ids=backup_msg_id)
                         if old_msg:
                             text = old_msg.text or ""
+                            # Check if already recalled
+                            if "#已撤回" in text:
+                                return
                             await self.client.edit_message(target_id, backup_msg_id, text + f"\n\n#已撤回 `{recall_time}`")
                             
-                        # 发送警告 (保持原有逻辑)
+                        # 发送警告
                         await self.client.send_message(
                             target_id, 
                             f"⚠️ 消息已被撤回 ⚠️\n🕐 撤回时间: {recall_time}",
                             reply_to=backup_msg_id
                         )
                     except Exception as e:
-                        # 如编辑失败(超时)，发送带tag的警告
+                         # 失败告警
                          await self.client.send_message(
                             target_id, 
                             f"⚠️ 消息已被撤回 ⚠️\n🕐 撤回时间: {recall_time}\n#已撤回",
                             reply_to=backup_msg_id
                         )
-                        
-        except Exception as e:
-            self.logger.error(f"处理撤回消息失败: {e}")
+                except Exception as e:
+                     self.logger.error(f"Delete processing failed: {e}")
+                return
+
+            # Legacy / Fallback path (should not be hit with new dispatcher)
+            pass
 
     def _is_auto_delete_ignored(self, timestamp_str):
         if not timestamp_str: return False

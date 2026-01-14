@@ -234,11 +234,14 @@ class GroupBackupClient:
             
         @self.client.on(events.MessageEdited(chats=source_chats))
         async def handler_edit(event):
-            await self.handler.handle_edit_message(event)
+            targets = self.source_map.get(event.chat_id, [])
+            await self.handler.handle_edit_message(event, targets)
 
         @self.client.on(events.MessageDeleted(chats=source_chats))
         async def handler_delete(event):
-            await self.handler.handle_deleted_message(event)
+            if hasattr(event, 'chat_id') and event.chat_id:
+                targets = self.source_map.get(event.chat_id, [])
+                await self.handler.handle_deleted_message(event, targets)
             
         await self.client.run_until_disconnected()
 

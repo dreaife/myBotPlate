@@ -32,7 +32,7 @@ class MessageMapper:
             logging.error(f"保存消息映射失败: {e}")
     
     def add_mapping(self, source_chat_id: int, source_msg_id: int, 
-                    backup_chat_id: int, backup_msg_id: int):
+                    backup_chat_id: int, backup_msg_id: int, target_topic_id: int = None):
         """添加消息映射 (支持一对多)"""
         key = f"{source_chat_id}_{source_msg_id}"
         if key not in self.mapping:
@@ -44,6 +44,7 @@ class MessageMapper:
             "source_msg_id": source_msg_id,
             "backup_chat_id": backup_chat_id,
             "backup_msg_id": backup_msg_id,
+            "target_topic_id": target_topic_id,
             "timestamp": datetime.now().isoformat()
         }
         
