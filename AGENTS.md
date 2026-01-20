@@ -116,3 +116,34 @@ No specific `.cursorrules` or `.github/copilot-instructions.md` were found. If y
 
 ---
 *Created by Antigravity Agent - 2026-01-20*
+
+## 8. Example Workflow: Adding Source Link Feature (2026-01-21)
+This section documents the workflow used to implement the "Source Message Link" feature as a reference for future agents.
+
+### Task
+Add a clickable link to the original message in the forwarded message header.
+
+### Steps Taken
+1.  **Analysis**:
+    -   Identified target file: `telebot/group_backup/handlers.py`.
+    -   Located `_build_message_header` and message processing methods (`_process_single_target`, `_process_album_target`).
+
+2.  **Implementation**:
+    -   Modified `_process_single_target` and `_process_album_target` to fetch `chat` object:
+        ```python
+        try:
+            chat = await message.get_chat()
+        except:
+            chat = None
+        ```
+    -   Updated `_build_message_header` signature to accept `chat` and `message_id`.
+    -   Added logic to generate links based on public (`t.me/username/id`) or private (`t.me/c/id/id`) chat types.
+    -   Appended link to header: `🔗 [跳转原文](url)`.
+
+3.  **Deployment**:
+    -   Restarted service: `sudo systemctl restart group_backup_bot`.
+
+4.  **Git Commit**:
+    -   `git add telebot/group_backup/handlers.py`
+    -   `git commit -m "feat: Add source message link to forward header"`
+    -   `git push`
