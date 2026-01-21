@@ -12,6 +12,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from .mapper import MessageMapper
 from .handlers import MessageHandler
+from .summarizer import GroupSummarizer
 
 class GroupBackupClient:
     """群消息备份客户端"""
@@ -33,7 +34,7 @@ class GroupBackupClient:
         
         self._parse_config()
         self.handler = MessageHandler(None, config, self.mapper, self.chat_states) # Client not set yet
-
+        self.summarizer = GroupSummarizer(None, config, self.mapper, logger)
 
     def _parse_entity_id(self, id_val):
         """Parses ID into (chat_id, topic_id)"""
@@ -159,7 +160,6 @@ class GroupBackupClient:
             
         safe_title = "".join([c for c in chat_title if c.isalnum() or c in (' ', '-', '_')]).strip()
         date_str = datetime.now().strftime('%Y-%m-%d')
-        # Add suffix to filename to prevent overwrite (e.g. _daily, _weekly)
         filename = f"{safe_title}_{date_str}{suffix}.bak"
         
         export_dir.mkdir(parents=True, exist_ok=True)
@@ -168,6 +168,15 @@ class GroupBackupClient:
         with open(file_path, 'w', encoding='utf-8') as f:
             for m in messages:
                 f.write(json.dumps(m, ensure_ascii=False) + '\n')
+        
+        # Write metadata
+        try:
+            meta_path = file_path.with_suffix('.bak.meta')
+            with open(meta_path, 'w', encoding='utf-8') as f:
+                json.dump({"target_id": chat_id, "timestamp": datetime.now().isoformat()}, f)
+        except Exception as e:
+            self.logger.error(f"Failed to write metadata for {filename}: {e}")
+            
         return file_path
 
     async def run_daily_backup(self):
@@ -185,7 +194,11 @@ class GroupBackupClient:
                     unique_targets.add(target['target_id'])
             
             for target_id in unique_targets:
-                await self._export_messages(target_id, start_time, export_dir, suffix="_daily")
+                path = await self._export_messages(target_id, start_time, export_dir, suffix="_daily")
+                # Trigger Summary
+                if path and self.summarizer:
+                    await self.summarizer.run_process(path, target_id)
+
         except Exception as e:
             self.logger.error(f"每日备份异常: {e}")
 
@@ -220,9 +233,13 @@ class GroupBackupClient:
         self.logger.info("Starting backup bot (Refactored)...")
         self.client = TelegramClient(str(self.session_file), self.api_id, self.api_hash)
         self.handler.client = self.client # Inject client into handler
+        self.summarizer.client = self.client # Inject client into summarizer
         
         await self.client.start()
         self.start_scheduler()
+        
+        # Trigger async backfill check
+        asyncio.create_task(self.summarizer.run_batch_backfill())
         
         source_chats = list(self.source_map.keys())
         self.logger.info(f"Monitoring {len(source_chats)} source groups")

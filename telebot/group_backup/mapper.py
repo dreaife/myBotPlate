@@ -11,6 +11,8 @@ class MessageMapper:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.mapping_file = self.data_dir / "message_mapping.json"
         self.mapping = self._load_mapping()
+        self.reverse_mapping = {} # (target_id, msg_id) -> {source_id, source_msg_id}
+        self._build_reverse_index()
     
     def _load_mapping(self) -> dict:
         """加载消息映射"""
@@ -22,7 +24,18 @@ class MessageMapper:
                 logging.error(f"加载消息映射失败: {e}")
                 return {}
         return {}
-    
+
+    def _build_reverse_index(self):
+        """构建反向索引"""
+        self.reverse_mapping = {}
+        for key, value in self.mapping.items():
+            entries = value if isinstance(value, list) else [value]
+            for entry in entries:
+                tid = entry.get('backup_chat_id')
+                mid = entry.get('backup_msg_id')
+                if tid and mid:
+                    self.reverse_mapping[(tid, mid)] = entry
+
     def _save_mapping(self):
         """保存消息映射"""
         try:
@@ -38,7 +51,6 @@ class MessageMapper:
         if key not in self.mapping:
             self.mapping[key] = []
         
-        # Check uniqueness to avoid duplicates if re-run
         entry = {
             "source_chat_id": source_chat_id,
             "source_msg_id": source_msg_id,
@@ -48,11 +60,14 @@ class MessageMapper:
             "timestamp": datetime.now().isoformat()
         }
         
-        # If mapping was old format (dict), convert to list
         if isinstance(self.mapping[key], dict):
             self.mapping[key] = [self.mapping[key]]
             
         self.mapping[key].append(entry)
+        
+        # Update reverse index
+        self.reverse_mapping[(backup_chat_id, backup_msg_id)] = entry
+        
         self._save_mapping()
     
     def get_backup_msgs(self, source_chat_id: int, source_msg_id: int) -> list:
@@ -68,6 +83,10 @@ class MessageMapper:
             
         return data
 
+    def get_source_info(self, target_chat_id: int, target_msg_id: int):
+        """反向查找：根据备份消息ID获取源信息"""
+        return self.reverse_mapping.get((target_chat_id, target_msg_id))
+
     def cleanup_old_mappings(self, retention_days: int):
         """清理过期的映射记录"""
         if retention_days <= 0:
@@ -79,22 +98,13 @@ class MessageMapper:
         keys_to_remove = []
         
         for key, entries in self.mapping.items():
-            # Standardize to list
             if isinstance(entries, dict):
                 entries = [entries]
             
-            # Filter entries
             new_entries = []
             for entry in entries:
                 ts_str = entry.get('timestamp')
                 if not ts_str:
-                    # Keep entries without timestamp to be safe? or drop?
-                    # Let's keep them assuming they might be important old data 
-                    # OR drop them if we want strict cleanup. 
-                    # Assuming data migration added timestamps, old data might lack it.
-                    # Current code adds timestamp. Old data (pre-v2) might not have it.
-                    # Let's keep strict check: if has timestamp and older -> remove.
-                    # If no timestamp, maybe keep (safer).
                     new_entries.append(entry)
                     continue
                     
@@ -112,6 +122,9 @@ class MessageMapper:
         
         for key in keys_to_remove:
             del self.mapping[key]
+            
+        # Rebuild reverse index after cleanup
+        self._build_reverse_index()
             
         final_count = len(self.mapping)
         removed_count = initial_count - final_count

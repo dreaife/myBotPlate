@@ -43,3 +43,15 @@ groups:
   "-100111222333.1001":
     targets: ["-100444555666.1002"]
     name: "Source C Topic 1"
+
+# Summary Configuration
+summary:
+  enabled: false
+  provider: "openai" # "openai" or other providers
+  api_key: "your_api_key"
+  base_url: "https://api.openai.com/v1" # Optional
+  model: "gpt-3.5-turbo"
+  prompt: "Optional custom system prompt"
+
+# Note: Add 'summary_target: ID' to specific groups if needed.
+# If not specified, summary will be sent to the first target group.
