@@ -24,7 +24,10 @@ class OpenAIClient(AIProvider):
             "Msg: <text>\n"
             "SourceLink: <url>\n"
             "---\n"
-            "Do not include images or videos in the summary. Output clear text."
+            "Do not include images or videos in the summary. Output clear text.\n"
+            "Note: Messages marked with '(Followed User ...)' are from high-priority users. "
+            "You MUST give these users' messages higher weight in the summary. "
+            "Explicitly mention their names and summarize what they discussed."
         )
         system_prompt = prompt if prompt else default_prompt
 

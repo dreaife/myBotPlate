@@ -143,6 +143,33 @@ class GroupSummarizer:
 
         # Prepare Content for AI
         formatted_lines = []
+        
+        # Load focus users from config
+        focus_users = set()
+        raw_focus = self.summary_config.get('focus_users', [])
+        for u in raw_focus:
+            focus_users.add(str(u))
+            
+        # Resolve Sender Names dynamically (to avoid polluting backup files)
+        sender_ids = set()
+        for m in msgs:
+            sid = m.get('sender_id')
+            if sid: sender_ids.add(int(sid))
+            
+        sender_map = {}
+        if sender_ids and self.client:
+            try:
+                users = await self.client.get_entity(list(sender_ids))
+                if not isinstance(users, list): users = [users]
+                
+                for u in users:
+                    name = getattr(u, 'first_name', '') or ''
+                    if getattr(u, 'last_name', None):
+                        name += f" {u.last_name}"
+                    sender_map[u.id] = name.strip() or "Unknown"
+            except Exception as e:
+                self.logger.warning(f"Failed to resolve sender names for summary: {e}")
+
         for m in msgs:
             clean_source_id = str(source_id)
             if clean_source_id.startswith("-100"):
@@ -159,8 +186,22 @@ class GroupSummarizer:
             
             if len(text_content) > 500:
                 text_content = text_content[:500] + "..."
+            
+            # Check for followed user
+            sender_id_raw = m.get('sender_id')
+            sender_id = str(sender_id_raw) if sender_id_raw else ''
+            
+            sender_name = sender_map.get(sender_id_raw, 'Unknown') if sender_id_raw else 'Unknown'
+            
+            is_followed = sender_id in focus_users
+            
+            msg_header = f"Msg: {text_content}"
+            if is_followed:
+                msg_header = f"Msg (Followed User {sender_name}): {text_content}"
+            elif sender_name and sender_name != 'Unknown':
+                 msg_header = f"Msg ({sender_name}): {text_content}"
                 
-            formatted_lines.append(f"Msg: {text_content}\nSourceLink: {link}\n---")
+            formatted_lines.append(f"{msg_header}\nSourceLink: {link}\n---")
 
         context_text = "\n".join(formatted_lines)
         if not context_text.strip():
@@ -172,6 +213,15 @@ class GroupSummarizer:
         date_str = datetime.now().strftime('%Y_%m_%d')
         
         custom_prompt = self.summary_config.get('prompt')
+        
+        # Always append emphasis instruction if custom prompt is used
+        if custom_prompt:
+            emphasis = (
+                "\n\nNote: Messages marked with '(Followed User ...)' are from high-priority users. "
+                "You MUST give these users' messages higher weight in the summary. "
+                "Explicitly mention their names and summarize what they discussed."
+            )
+            custom_prompt += emphasis
         
         summary_content = await self.provider.generate_summary(context_text, custom_prompt)
         
