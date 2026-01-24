@@ -7,6 +7,10 @@ settings:
   mapping_retention_days: 30 # Delete mapping records older than X days
   timezone: "Asia/Tokyo"
   
+  # Focus Users: List of User IDs or Usernames to highlight and prioritize in summary
+  # For summary priority, User IDs are required (as backups only store IDs).
+  focus_users: [] 
+  
   backup_schedule:
     daily_time: "04:00" # HH:MM (Local time)
     local_export_dir: "/data/bot/group_backup/backups"

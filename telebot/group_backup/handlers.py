@@ -18,6 +18,17 @@ class MessageHandler:
         self._queues = {}
         self._workers = {}
         self._album_buffers = {} # Key: (queue_key, grouped_id) -> [messages]
+        self.focus_users = self._parse_focus_users()
+
+    def _parse_focus_users(self):
+        raw = self.config.get('settings', {}).get('focus_users', [])
+        focused = set()
+        for u in raw:
+            if isinstance(u, int):
+                focused.add(u)
+            elif isinstance(u, str):
+                focused.add(u.lstrip('@').lower())
+        return focused
 
     def _get_queue_key(self, target_info):
         target_id = target_info['target_id']
@@ -412,6 +423,16 @@ class MessageHandler:
         sender_name = getattr(sender, 'first_name', 'Unknown')
         if hasattr(sender, 'last_name') and sender.last_name:
             sender_name += f" {sender.last_name}"
+        
+        is_focused = False
+        if sender:
+            if sender.id in self.focus_users:
+                is_focused = True
+            elif hasattr(sender, 'username') and sender.username and sender.username.lower() in self.focus_users:
+                is_focused = True
+                
+        if is_focused:
+            sender_name = f"**{sender_name}**"
         
         sender_username = f"@{sender.username}" if hasattr(sender, 'username') and sender.username else ""
         avatar_icon = self._build_avatar_icon(sender_name)
