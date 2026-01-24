@@ -105,6 +105,13 @@ class GroupSummarizer:
         if not source_conf:
             source_conf = self.config.get('groups', {}).get(str(source_id), {})
         
+        # Prepare Focus Users (Global + Source)
+        current_focus_set = self.focus_users.copy()
+        source_focus = source_conf.get('focus_users', [])
+        for u in source_focus:
+            if isinstance(u, int):
+                current_focus_set.add(u)
+        
         # Determine Summary Target
         summary_target_id = source_conf.get('summary_target')
         
@@ -147,7 +154,7 @@ class GroupSummarizer:
             text_content = m.get('text', '')
             
             sender_id = m.get('sender_id')
-            if sender_id in self.focus_users:
+            if sender_id in current_focus_set:
                 text_content = f"【重点关注用户发言】 {text_content}"
             
             if len(text_content) > 500:

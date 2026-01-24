@@ -31,13 +31,16 @@ groups:
   -100123456789:
     targets: [-100987654321]
     name: "Source A"
+    focus_users: [111222] # Source-level focus users
 
-  # Example 2: One-to-Many
+  # Example 2: One-to-Many with Target-specific Focus
   # Backup from Source B to Target B AND Target C
   -100444555666:
     targets: 
       - -100999888777
-      - -100888777666
+      # Target C with specific focus users
+      - id: -100888777666
+        focus_users: ["@admin_user"]
     name: "Source B"
     tag: "#srcB"
 

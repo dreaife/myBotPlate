@@ -86,8 +86,19 @@ class GroupBackupClient:
                     self.logger.warning(f"Source {source_key} has invalid targets format: {targets}")
                     continue
             
-            for tid in targets:
-                target_id, target_topic_id = self._parse_entity_id(tid)
+            # Parse source-level focus users
+            source_focus_users = info.get('focus_users', [])
+            
+            for tid_entry in targets:
+                # Handle complex target config (dict)
+                target_focus_users = []
+                tid_val = tid_entry
+                
+                if isinstance(tid_entry, dict):
+                    tid_val = tid_entry.get('id')
+                    target_focus_users = tid_entry.get('focus_users', [])
+                
+                target_id, target_topic_id = self._parse_entity_id(tid_val)
                 if target_id is None:
                     continue
                     
@@ -96,7 +107,9 @@ class GroupBackupClient:
                     'target_topic_id': target_topic_id,
                     'source_topic_id': source_topic_id,
                     'name': info.get('name'),
-                    'tag': info.get('tag')
+                    'tag': info.get('tag'),
+                    'source_focus_users': source_focus_users,
+                    'target_focus_users': target_focus_users
                 }
                 self.source_map[source_id].append(entry)
 

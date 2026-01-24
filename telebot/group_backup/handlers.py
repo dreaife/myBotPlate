@@ -426,9 +426,20 @@ class MessageHandler:
         
         is_focused = False
         if sender:
-            if sender.id in self.focus_users:
+            # Combine all focus users
+            current_focus_set = self.focus_users.copy() # Global
+            
+            # Source Level
+            source_focus = target_info.get('source_focus_users', [])
+            current_focus_set.update(self._parse_raw_users(source_focus))
+            
+            # Target Level
+            target_focus = target_info.get('target_focus_users', [])
+            current_focus_set.update(self._parse_raw_users(target_focus))
+            
+            if sender.id in current_focus_set:
                 is_focused = True
-            elif hasattr(sender, 'username') and sender.username and sender.username.lower() in self.focus_users:
+            elif hasattr(sender, 'username') and sender.username and sender.username.lower() in current_focus_set:
                 is_focused = True
                 
         if is_focused:
@@ -477,6 +488,15 @@ class MessageHandler:
                 header += "↩️ 转发消息\n"
 
         return header + ("─" * 30 + "\n")
+
+    def _parse_raw_users(self, raw_list):
+        parsed = set()
+        for u in raw_list:
+            if isinstance(u, int):
+                parsed.add(u)
+            elif isinstance(u, str):
+                parsed.add(u.lstrip('@').lower())
+        return parsed
 
     def _find_reply_to(self, chat_id, reply_to_msg_id, target_id):
         """查找回复目标ID"""
