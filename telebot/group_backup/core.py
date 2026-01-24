@@ -134,10 +134,10 @@ class GroupBackupClient:
 
         scheduler.start()
 
-    async def _export_messages(self, chat_id, start_time, export_dir, suffix=""):
+    async def _export_messages(self, chat_id, start_time, export_dir, suffix="", topic_id=None):
         messages = []
         try:
-            async for msg in self.client.iter_messages(chat_id, offset_date=start_time, reverse=True):
+            async for msg in self.client.iter_messages(chat_id, offset_date=start_time, reverse=True, reply_to=topic_id):
                 if not msg.text and not msg.media: continue
                 messages.append({
                     "id": msg.id,
@@ -147,7 +147,7 @@ class GroupBackupClient:
                     "reply_to": msg.reply_to_msg_id
                 })
         except Exception as e:
-            self.logger.error(f"Export fetch failed for {chat_id}: {e}")
+            self.logger.error(f"Export fetch failed for {chat_id} (topic {topic_id}): {e}")
             return None
 
         if not messages: return None
@@ -160,7 +160,11 @@ class GroupBackupClient:
             
         safe_title = "".join([c for c in chat_title if c.isalnum() or c in (' ', '-', '_')]).strip()
         date_str = datetime.now().strftime('%Y-%m-%d')
-        filename = f"{safe_title}_{date_str}{suffix}.bak"
+        
+        if topic_id:
+            filename = f"{safe_title}_{topic_id}_{date_str}{suffix}.bak"
+        else:
+            filename = f"{safe_title}_{date_str}{suffix}.bak"
         
         export_dir.mkdir(parents=True, exist_ok=True)
         file_path = export_dir / filename
@@ -173,7 +177,11 @@ class GroupBackupClient:
         try:
             meta_path = file_path.with_suffix('.bak.meta')
             with open(meta_path, 'w', encoding='utf-8') as f:
-                json.dump({"target_id": chat_id, "timestamp": datetime.now().isoformat()}, f)
+                json.dump({
+                    "target_id": chat_id, 
+                    "topic_id": topic_id,
+                    "timestamp": datetime.now().isoformat()
+                }, f)
         except Exception as e:
             self.logger.error(f"Failed to write metadata for {filename}: {e}")
             
@@ -187,14 +195,14 @@ class GroupBackupClient:
             export_dir = Path(schedule.get('local_export_dir', './data/exports'))
             start_time = datetime.now(pytz.utc) - timedelta(hours=24)
             
-            # 获取所有唯一的备份群ID
+            # 获取所有唯一的备份群ID (TargetID, TopicID)
             unique_targets = set()
             for targets in self.source_map.values():
                 for target in targets:
-                    unique_targets.add(target['target_id'])
+                    unique_targets.add((target['target_id'], target['target_topic_id']))
             
-            for target_id in unique_targets:
-                path = await self._export_messages(target_id, start_time, export_dir, suffix="_daily")
+            for target_id, topic_id in unique_targets:
+                path = await self._export_messages(target_id, start_time, export_dir, suffix="_daily", topic_id=topic_id)
                 # Trigger Summary
                 if path and self.summarizer:
                     await self.summarizer.run_process(path, target_id)
@@ -209,20 +217,23 @@ class GroupBackupClient:
             export_dir = Path("./data/temp_weekly")
             start_time = datetime.now(pytz.utc) - timedelta(days=7)
             
-            # 获取所有唯一的备份群ID
+            # 获取所有唯一的备份群ID (TargetID, TopicID)
             unique_targets = set()
             for targets in self.source_map.values():
                 for target in targets:
-                    unique_targets.add(target['target_id'])
+                    unique_targets.add((target['target_id'], target['target_topic_id']))
             
-            for target_id in unique_targets:
-                path = await self._export_messages(target_id, start_time, export_dir, suffix="_weekly")
+            for target_id, topic_id in unique_targets:
+                path = await self._export_messages(target_id, start_time, export_dir, suffix="_weekly", topic_id=topic_id)
                 if path:
                     caption = f"#备份 (Weekly) {datetime.now().strftime('%Y-%m-%d')}"
+                    if topic_id:
+                        caption += f" Topic:{topic_id}"
+                    
                     try:
-                        await self.client.send_file(target_id, path, caption=caption)
+                        await self.client.send_file(target_id, path, caption=caption, reply_to=topic_id)
                     except Exception as e:
-                        self.logger.error(f"Failed to upload to {target_id}: {e}")
+                        self.logger.error(f"Failed to upload to {target_id} (topic {topic_id}): {e}")
                         
                     if os.path.exists(path):
                         os.remove(path)
