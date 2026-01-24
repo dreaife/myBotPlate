@@ -136,6 +136,7 @@ class GroupBackupClient:
 
     async def _export_messages(self, chat_id, start_time, export_dir, suffix=""):
         messages = []
+        sender_ids = set()
         try:
             async for msg in self.client.iter_messages(chat_id, offset_date=start_time, reverse=True):
                 if not msg.text and not msg.media: continue
@@ -146,11 +147,35 @@ class GroupBackupClient:
                     "text": msg.text,
                     "reply_to": msg.reply_to_msg_id
                 })
+                if msg.sender_id:
+                    sender_ids.add(msg.sender_id)
         except Exception as e:
             self.logger.error(f"Export fetch failed for {chat_id}: {e}")
             return None
 
         if not messages: return None
+
+        # Resolve Sender Names
+        sender_map = {}
+        if sender_ids:
+            try:
+                # Batch fetch entities (should be cached by iter_messages)
+                users = await self.client.get_entity(list(sender_ids))
+                # Single result handling?
+                if not isinstance(users, list):
+                    users = [users]
+                    
+                for u in users:
+                    name = getattr(u, 'first_name', '') or ''
+                    if getattr(u, 'last_name', None):
+                        name += f" {u.last_name}"
+                    sender_map[u.id] = name.strip() or "Unknown"
+            except Exception as e:
+                self.logger.warning(f"Failed to resolve sender names for export: {e}")
+        
+        # Inject names
+        for m in messages:
+            m['sender_name'] = sender_map.get(m['sender_id'], 'Unknown')
 
         try:
             entity = await self.client.get_entity(chat_id)

@@ -127,6 +127,15 @@ class GroupSummarizer:
 
         # Prepare Content for AI
         formatted_lines = []
+        
+        # Load focus users from config
+        focus_users = set()
+        raw_focus = self.summary_config.get('focus_users', [])
+        for u in raw_focus:
+            focus_users.add(str(u))
+            
+        found_focus_names = set()
+
         for m in msgs:
             clean_source_id = str(source_id)
             if clean_source_id.startswith("-100"):
@@ -138,8 +147,21 @@ class GroupSummarizer:
             text_content = m.get('text', '')
             if len(text_content) > 500:
                 text_content = text_content[:500] + "..."
+            
+            # Check for followed user
+            sender_id = str(m.get('sender_id', ''))
+            sender_name = m.get('sender_name', 'Unknown')
+            
+            is_followed = sender_id in focus_users
+            
+            msg_header = f"Msg: {text_content}"
+            if is_followed:
+                msg_header = f"Msg (Followed User {sender_name}): {text_content}"
+                found_focus_names.add(sender_name)
+            elif sender_name and sender_name != 'Unknown':
+                 msg_header = f"Msg ({sender_name}): {text_content}"
                 
-            formatted_lines.append(f"Msg: {text_content}\nSourceLink: {link}\n---")
+            formatted_lines.append(f"{msg_header}\nSourceLink: {link}\n---")
 
         context_text = "\n".join(formatted_lines)
         if not context_text.strip():
@@ -151,6 +173,19 @@ class GroupSummarizer:
         date_str = datetime.now().strftime('%Y_%m_%d')
         
         custom_prompt = self.summary_config.get('prompt')
+        
+        # Inject emphasis instructions if focus users found
+        if found_focus_names:
+            names_list = ", ".join(found_focus_names)
+            emphasis = (
+                f"\n\nIMPORTANT: The following users are 'Followed Users': {names_list}. "
+                "You MUST give their messages higher weight. "
+                "When summarizing, explicitly mention their names and what they said."
+            )
+            if custom_prompt:
+                custom_prompt += emphasis
+            else:
+                 custom_prompt = "Summarize the chat log." + emphasis
         
         summary_content = await self.provider.generate_summary(context_text, custom_prompt)
         
