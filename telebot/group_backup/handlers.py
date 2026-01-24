@@ -18,6 +18,17 @@ class MessageHandler:
         self._queues = {}
         self._workers = {}
         self._album_buffers = {} # Key: (queue_key, grouped_id) -> [messages]
+        self.focus_users = self._parse_focus_users()
+
+    def _parse_focus_users(self):
+        raw = self.config.get('settings', {}).get('focus_users', [])
+        focused = set()
+        for u in raw:
+            if isinstance(u, int):
+                focused.add(u)
+            elif isinstance(u, str):
+                focused.add(u.lstrip('@').lower())
+        return focused
 
     def _get_queue_key(self, target_info):
         target_id = target_info['target_id']
@@ -413,6 +424,27 @@ class MessageHandler:
         if hasattr(sender, 'last_name') and sender.last_name:
             sender_name += f" {sender.last_name}"
         
+        is_focused = False
+        if sender:
+            # Combine all focus users
+            current_focus_set = self.focus_users.copy() # Global
+            
+            # Source Level
+            source_focus = target_info.get('source_focus_users', [])
+            current_focus_set.update(self._parse_raw_users(source_focus))
+            
+            # Target Level
+            target_focus = target_info.get('target_focus_users', [])
+            current_focus_set.update(self._parse_raw_users(target_focus))
+            
+            if sender.id in current_focus_set:
+                is_focused = True
+            elif hasattr(sender, 'username') and sender.username and sender.username.lower() in current_focus_set:
+                is_focused = True
+                
+        if is_focused:
+            sender_name = f"**{sender_name}**"
+        
         sender_username = f"@{sender.username}" if hasattr(sender, 'username') and sender.username else ""
         avatar_icon = self._build_avatar_icon(sender_name)
         header = f"{avatar_icon} {sender_name} {sender_username}"
@@ -456,6 +488,15 @@ class MessageHandler:
                 header += "↩️ 转发消息\n"
 
         return header + ("─" * 30 + "\n")
+
+    def _parse_raw_users(self, raw_list):
+        parsed = set()
+        for u in raw_list:
+            if isinstance(u, int):
+                parsed.add(u)
+            elif isinstance(u, str):
+                parsed.add(u.lstrip('@').lower())
+        return parsed
 
     def _find_reply_to(self, chat_id, reply_to_msg_id, target_id):
         """查找回复目标ID"""

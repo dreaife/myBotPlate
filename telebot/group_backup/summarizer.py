@@ -22,6 +22,15 @@ class GroupSummarizer:
         self.data_dir = Path(config.get('settings', {}).get('backup_schedule', {}).get('local_export_dir', './data/exports'))
         self.state_file = self.data_dir / "summary_state.json"
         self.processed_files = self._load_state()
+        self.focus_users = self._parse_focus_users()
+
+    def _parse_focus_users(self):
+        raw = self.config.get('settings', {}).get('focus_users', [])
+        focused = set()
+        for u in raw:
+            if isinstance(u, int):
+                focused.add(u)
+        return focused
 
     def _load_state(self):
         if self.state_file.exists():
@@ -96,6 +105,13 @@ class GroupSummarizer:
         if not source_conf:
             source_conf = self.config.get('groups', {}).get(str(source_id), {})
         
+        # Prepare Focus Users (Global + Source)
+        current_focus_set = self.focus_users.copy()
+        source_focus = source_conf.get('focus_users', [])
+        for u in source_focus:
+            if isinstance(u, int):
+                current_focus_set.add(u)
+        
         # Determine Summary Target
         summary_target_id = source_conf.get('summary_target')
         
@@ -136,6 +152,11 @@ class GroupSummarizer:
             link = f"https://t.me/c/{clean_source_id}/{real_src_id}"
             
             text_content = m.get('text', '')
+            
+            sender_id = m.get('sender_id')
+            if sender_id in current_focus_set:
+                text_content = f"【重点关注用户发言】 {text_content}"
+            
             if len(text_content) > 500:
                 text_content = text_content[:500] + "..."
                 
